@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # -------------------- 配置 --------------------
@@ -18,7 +19,7 @@ results = []
 # -------------------- 比较函数 --------------------
 def evaluate(y_true, y_pred):
     return {
-        'rmse': mean_squared_error(y_true, y_pred, squared=False),
+        'rmse': np.sqrt(mean_squared_error(y_true, y_pred)),  # 修复：避免使用已弃用的 squared=False
         'mae': mean_absolute_error(y_true, y_pred),
         'r2': r2_score(y_true, y_pred)
     }

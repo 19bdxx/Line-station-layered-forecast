@@ -3,10 +3,10 @@ import numpy as np
 import lightgbm as lgb
 from lightgbm import early_stopping, log_evaluation, record_evaluation
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import matplotlib.pyplot as plt  # ✅ 新增：用于绘图
+import matplotlib.pyplot as plt
 import os
 import warnings
-warnings.filterwarnings("ignore", category=FutureWarning, message=".*squared.*deprecated.*")
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 # -------------------- 代码说明 --------------------
@@ -22,6 +22,10 @@ warnings.filterwarnings("ignore", category=FutureWarning, message=".*squared.*de
 M = 4 * 60
 DATA_PATH = r"G:\WindPowerForecast\集群_场站预测\data\all_stations_输电线未发电置零_1min.csv"
 predict_steps = [i*15 for i in range(1, 17)]
+
+# 优化选项
+USE_STAT_FEATURES = True   # True: 使用统计摘要特征+时间特征（维度低，训练快）; False: 使用原始滑动窗口展平
+SAVE_MODEL = True          # True: 将训练好的模型保存为 .txt 文件
 
 stations = {
     "XYA": {
@@ -67,6 +71,35 @@ def plot_rmse_curve(evals_result, station_name, target_col, predict_step, save_d
     plt.savefig(plot_path)
     plt.close()
 
+# -------------------- 统计特征提取 --------------------
+def extract_features(df, hist_features, i, M):
+    """
+    提取统计摘要特征 + 时间特征，替代原始滑动窗口展平。
+    在多个时间窗口（15/30/60/120/M分钟）内分别计算均值、标准差、最小值、最大值，
+    并附加当前时刻值、近15步趋势斜率及时间特征（小时、分钟、星期几）。
+    相比原始展平特征（241×N维），维度大幅降低（约25~50维），训练速度更快。
+    """
+    feats = []
+    windows = [15, 30, 60, 120, M]
+    for w in windows:
+        start = max(i - w, i - M)
+        seg = df[hist_features].iloc[start:i + 1]
+        feats.extend(seg.mean().tolist())
+        feats.extend(seg.std().fillna(0).tolist())
+        feats.extend(seg.min().tolist())
+        feats.extend(seg.max().tolist())
+    # 当前时刻值
+    feats.extend(df[hist_features].iloc[i].tolist())
+    # 近15步线性趋势斜率
+    for col in hist_features:
+        recent = df[col].iloc[max(i - 14, 0):i + 1].values
+        slope = np.polyfit(range(len(recent)), recent, 1)[0] if len(recent) > 1 else 0.0
+        feats.append(slope)
+    # 时间特征
+    ts = df['timestamp'].iloc[i]
+    feats += [ts.hour, ts.minute, ts.dayofweek]
+    return feats
+
 # -------------------- 主实验函数 --------------------
 def run_experiment(df, station_name, target_col, predict_step, limit_col, include_limit, save_dir):
     if target_col not in df.columns:
@@ -75,32 +108,37 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
     if include_limit:
         hist_features.append(limit_col)
 
-    X_list, y_list, ts_list = [], [], []
+    X_list, y_list, ts_list, lv_list = [], [], [], []
 
     for i in range(M, len(df) - predict_step):
-        x_hist = df[hist_features].iloc[i - M:i + 1].values.flatten()
-        x_input = x_hist
-        y_target = df.loc[i + predict_step, target_col]
-        ts_target = df.loc[i + predict_step, 'timestamp']
+        if USE_STAT_FEATURES:
+            x_input = extract_features(df, hist_features, i, M)
+        else:
+            x_input = df[hist_features].iloc[i - M:i + 1].values.flatten()
+        y_target = df.iloc[i + predict_step][target_col]
+        ts_target = df.iloc[i + predict_step]['timestamp']
+        lv_target = df.iloc[i + predict_step][limit_col]  # 修复：在循环中同步收集限电值
         P_capacity = stations[station_name]['P_capacity']
 
         X_list.append(x_input)
         y_list.append(y_target)
         ts_list.append(ts_target)
+        lv_list.append(lv_target)
 
     X = np.array(X_list)
     y = np.array(y_list)
     ts = np.array(ts_list)
+    lv = np.array(lv_list)
 
     split_idx = int(len(X) * 0.8)
     X_train, X_test = X[:split_idx], X[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
     ts_test = ts[split_idx:]
+    lv_test = lv[split_idx:]  # 修复：使用与测试集对齐的限电值
 
     split_idx_train = int(len(X_train) * 0.8)
     X_tr, X_val = X_train[:split_idx_train], X_train[split_idx_train:]
     y_tr, y_val = y_train[:split_idx_train], y_train[split_idx_train:]
-    ts_tr, ts_val = ts[:split_idx_train], ts[split_idx_train:]
 
     train_data = lgb.Dataset(X_tr, label=y_tr)
     valid_data = lgb.Dataset(X_val, label=y_val)
@@ -135,7 +173,7 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
     y_pred = model.predict(X_test, num_iteration=model.best_iteration)
     bias_rate = calculate_bias_rate(y_test, y_pred, P_capacity)
 
-    rmse = mean_squared_error(y_test, y_pred, squared=False)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))  # 修复：避免使用已弃用的 squared=False
     mae = mean_absolute_error(y_test, y_pred)
     mape = np.mean(np.abs((y_test - y_pred) / (y_test + 1e-8))) * 100
     r2 = r2_score(y_test, y_pred)
@@ -145,14 +183,24 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
         'y_true': y_test,
         'y_pred': y_pred,
         'bias_rate': bias_rate,
-        'limit_value': [df.loc[i + predict_step, limit_col] for i in range(len(y_test))]
+        'limit_value': lv_test  # 修复：使用正确对齐的测试集限电值
     })
 
     file_prefix = f"{target_col}_t+{predict_step}"
     results_df.to_csv(os.path.join(save_dir, f"{file_prefix}.csv"), index=False)
 
-    # ✅ 新增：保存RMSE曲线图
+    # 保存RMSE曲线图
     plot_rmse_curve(evals_result, station_name, target_col, predict_step, save_dir)
+
+    # 保存训练好的模型
+    if SAVE_MODEL:
+        model.save_model(os.path.join(save_dir, f"{file_prefix}_model.txt"))
+
+    # 保存特征重要性
+    if USE_STAT_FEATURES:
+        importance = model.feature_importance(importance_type='gain')
+        imp_path = os.path.join(save_dir, f"{file_prefix}_feature_importance.csv")
+        pd.DataFrame({'importance': importance}).to_csv(imp_path, index=False)
 
     print(f"\n✅ {station_name} {'含限电' if include_limit else '无限电'} | {file_prefix}")
     print(f"RMSE : {rmse:.2f}")
