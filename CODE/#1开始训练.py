@@ -209,9 +209,12 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
     # 保存RMSE曲线图
     plot_rmse_curve(evals_result, station_name, target_col, predict_step, save_dir)
 
-    # 保存训练好的模型
+    # 保存训练好的模型（先删除旧文件，避免 LightGBM 因文件已存在而报错）
     if SAVE_MODEL:
-        model.save_model(os.path.join(save_dir, f"{file_prefix}_model.txt"))
+        model_path = os.path.join(save_dir, f"{file_prefix}_model.txt")
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        model.save_model(model_path)
 
     # 保存特征重要性
     if USE_STAT_FEATURES:
