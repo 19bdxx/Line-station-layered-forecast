@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # -------------------- 配置 --------------------
 M = 4 * 60
-DATA_PATH = r"G:\WindPowerForecast\集群_场站预测\data\all_stations_输电线未发电置零_1min.csv"
+DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'RAW_DATA', 'all_stations.csv')
 predict_steps = [i*15 for i in range(1, 17)]
 
 # 优化选项
