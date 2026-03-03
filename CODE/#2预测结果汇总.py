@@ -38,7 +38,9 @@ base_dirs = {
 }
 
 for limit_mode, base_dir in base_dirs.items():
-    print(f"\n📂 正在处理目录：{base_dir} ({limit_mode})")
+    print(f"\n{'='*50}")
+    print(f"📂 处理目录：{base_dir} ({limit_mode})")
+    print(f"{'='*50}")
     
     for station, targets in stations.items():
         station_dir = os.path.join(base_dir, station)
@@ -46,13 +48,14 @@ for limit_mode, base_dir in base_dirs.items():
             print(f"⚠️ 目录不存在: {station_dir}")
             continue
 
+        csv_files = [f for f in os.listdir(station_dir) if f.endswith(".csv")]
+        print(f"  📁 {station}：发现 {len(csv_files)} 个 CSV 文件", flush=True)
+
         # 用于分步长收集合并文件
         step_grouped = {}
 
-        for file in os.listdir(station_dir):
-            if not file.endswith(".csv"):
-                continue
-
+        for file_idx, file in enumerate(csv_files, 1):
+            print(f"    [{file_idx}/{len(csv_files)}] 读取: {file}", flush=True)
             file_path = os.path.join(station_dir, file)
 
             # 解析文件名：格式应为 {target_col}_t+{step}.csv

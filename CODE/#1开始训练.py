@@ -5,6 +5,7 @@ from lightgbm import early_stopping, log_evaluation, record_evaluation
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 import os
+import time
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -110,7 +111,12 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
 
     X_list, y_list, ts_list, lv_list = [], [], [], []
 
-    for i in range(M, len(df) - predict_step):
+    total_rows = len(df) - predict_step - M
+    print_every = max(1, total_rows // 10)   # 每完成 10% 打印一次
+    print(f"    提取特征中... 共 {total_rows} 行", flush=True)
+    feat_t0 = time.time()
+
+    for idx, i in enumerate(range(M, len(df) - predict_step)):
         if USE_STAT_FEATURES:
             x_input = extract_features(df, hist_features, i, M)
         else:
@@ -124,6 +130,14 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
         y_list.append(y_target)
         ts_list.append(ts_target)
         lv_list.append(lv_target)
+
+        if (idx + 1) % print_every == 0 or (idx + 1) == total_rows:
+            pct = (idx + 1) / total_rows * 100
+            elapsed = time.time() - feat_t0
+            eta = elapsed / (idx + 1) * (total_rows - idx - 1)
+            print(f"      {pct:5.1f}%  ({idx+1}/{total_rows})  已用 {elapsed:.0f}s  预计剩余 {eta:.0f}s", flush=True)
+
+    print(f"    特征提取完成，耗时 {time.time() - feat_t0:.1f}s", flush=True)
 
     X = np.array(X_list)
     y = np.array(y_list)
@@ -156,6 +170,8 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
         'verbose': -1
     }
 
+    print(f"    训练模型中... 训练集 {len(X_tr)} 行，验证集 {len(X_val)} 行", flush=True)
+    train_t0 = time.time()
     evals_result = {}
     model = lgb.train(
         params,
@@ -169,6 +185,7 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
             record_evaluation(evals_result)
         ]
     )
+    print(f"    模型训练完成，耗时 {time.time() - train_t0:.1f}s  最佳迭代: {model.best_iteration}", flush=True)
 
     y_pred = model.predict(X_test, num_iteration=model.best_iteration)
     bias_rate = calculate_bias_rate(y_test, y_pred, P_capacity)
@@ -223,6 +240,20 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
 df_all = pd.read_csv(DATA_PATH, parse_dates=['timestamp'])
 all_results = []
 
+# 计算总实验数
+total_experiments = sum(
+    len(config['target_cols']) * len(predict_steps)
+    for config in stations.values()
+) * 2  # ×2: with_limit + no_limit
+exp_no = 0
+
+print(f"\n{'='*60}")
+print(f"  共 {total_experiments} 个实验待运行")
+print(f"  场站: {list(stations.keys())}")
+print(f"  预测步长: {predict_steps}")
+print(f"{'='*60}\n")
+pipeline_t0 = time.time()
+
 for station_name, config in stations.items():
     for include_limit in [True, False]:
         sub_dir = '对比实验' if include_limit else '对比实验_无限电'
@@ -231,12 +262,20 @@ for station_name, config in stations.items():
 
         for target_col in config['target_cols']:
             for step in predict_steps:
+                exp_no += 1
+                mode_label = '含限电' if include_limit else '无限电'
+                print(f"\n[{exp_no}/{total_experiments}] 开始: {station_name} | {target_col} | t+{step}min | {mode_label}", flush=True)
+                exp_t0 = time.time()
                 result = run_experiment(
                     df_all, station_name, target_col, step,
                     config['limit_col'], include_limit, save_dir
                 )
+                print(f"[{exp_no}/{total_experiments}] 完成，本次耗时 {time.time() - exp_t0:.1f}s  累计耗时 {time.time() - pipeline_t0:.0f}s", flush=True)
                 all_results.append(result)
 
 summary_df = pd.DataFrame(all_results)
 summary_df.to_csv('所有实验汇总_metrics.csv', index=False)
-print("\n📊 所有实验完成，汇总结果已保存为 所有实验汇总_metrics.csv")
+print(f"\n{'='*60}")
+print(f"  所有 {total_experiments} 个实验完成！总耗时 {time.time() - pipeline_t0:.0f}s")
+print(f"  汇总结果已保存为 所有实验汇总_metrics.csv")
+print(f"{'='*60}")

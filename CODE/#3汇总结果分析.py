@@ -16,6 +16,19 @@ base_dirs = {
 
 results = []
 
+# -------------------- 统计待处理文件数 --------------------
+total_files = sum(
+    len([f for f in os.listdir(os.path.join(base_dir, station))
+         if f.endswith("_merged.csv")])
+    for base_dir in base_dirs.values()
+    for station in stations
+    if os.path.isdir(os.path.join(base_dir, station))
+)
+file_no = 0
+print(f"\n{'='*50}")
+print(f"  汇总结果分析：共发现 {total_files} 个合并文件")
+print(f"{'='*50}\n")
+
 # -------------------- 比较函数 --------------------
 def evaluate(y_true, y_pred):
     return {
@@ -41,6 +54,9 @@ for limit_mode, base_dir in base_dirs.items():
             except:
                 print(f"⚠️ 文件名异常: {file}")
                 continue
+
+            file_no += 1
+            print(f"  [{file_no}/{total_files}] 分析: {station} | {file} | {limit_mode}", flush=True)
 
             file_path = os.path.join(station_dir, file)
             df = pd.read_csv(file_path)
