@@ -27,7 +27,8 @@ warnings.filterwarnings("ignore", category=FutureWarning, message=".*squared.*de
 
 # -------------------- 配置 --------------------
 M = 32
-MODEL_TYPE = 'lightgbm'  # 可选: 'lightgbm', 'xgboost', 'random_forest', 'ridge', 'mlp', 'lstm'
+# 自动依次训练以下所有模型；如只需运行部分模型，注释掉不需要的条目即可。
+MODEL_TYPES = ['lightgbm', 'xgboost', 'random_forest', 'ridge', 'mlp', 'lstm']
 DATA_PATH = r"G:\WindPowerForecast\集群_场站预测\data\all_stations_输电线未发电置零_after20240718_15min.csv"
 predict_steps = [i for i in range(1, 96)]
 
@@ -255,7 +256,7 @@ def plot_rmse_curve(evals_result, station_name, target_col, predict_step, save_d
     plt.close()
 
 # -------------------- 主实验函数 --------------------
-def run_experiment(df, station_name, target_col, predict_step, limit_col, include_limit, save_dir):
+def run_experiment(df, station_name, target_col, predict_step, limit_col, include_limit, save_dir, model_type):
     if target_col not in df.columns:
         raise ValueError(f"未找到目标字段：{target_col}")
     hist_features = [target_col]
@@ -292,10 +293,10 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
     y_tr, y_val = y_train[:split_idx_train], y_train[split_idx_train:]
 
     model, evals_result = build_and_train_model(
-        MODEL_TYPE, X_tr, y_tr, X_val, y_val, seq_len, n_features
+        model_type, X_tr, y_tr, X_val, y_val, seq_len, n_features
     )
 
-    y_pred = predict_with_model(model, MODEL_TYPE, X_test, seq_len, n_features)
+    y_pred = predict_with_model(model, model_type, X_test, seq_len, n_features)
     bias_rate = calculate_bias_rate(y_test, y_pred, P_capacity)
 
     rmse = mean_squared_error(y_test, y_pred, squared=False)
@@ -315,10 +316,10 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
     results_df.to_csv(os.path.join(save_dir, f"{file_prefix}.csv"), index=False)
 
     # 仅 LightGBM 支持 RMSE 曲线图
-    if MODEL_TYPE == 'lightgbm' and evals_result:
+    if model_type == 'lightgbm' and evals_result:
         plot_rmse_curve(evals_result, station_name, target_col, predict_step, save_dir)
 
-    print(f"\n✅ {station_name} {'含限电' if include_limit else '无限电'} | {file_prefix} [{MODEL_TYPE}]")
+    print(f"\n✅ {station_name} {'含限电' if include_limit else '无限电'} | {file_prefix} [{model_type}]")
     print(f"RMSE : {rmse:.2f}")
     print(f"MAE  : {mae:.2f}")
     print(f"MAPE : {mape:.2f}%")
@@ -326,7 +327,7 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
 
     return {
         'station': station_name,
-        'model': MODEL_TYPE,
+        'model': model_type,
         'limit_mode': 'with_limit' if include_limit else 'no_limit',
         'target': target_col,
         'step': predict_step,
@@ -340,20 +341,31 @@ def run_experiment(df, station_name, target_col, predict_step, limit_col, includ
 df_all = pd.read_csv(DATA_PATH, parse_dates=['timestamp'])
 all_results = []
 
-for station_name, config in stations.items():
-    for include_limit in [True, False]:
-        sub_dir = '对比实验' if include_limit else '对比实验_无限电'
-        save_dir = os.path.join(sub_dir, station_name)
-        os.makedirs(save_dir, exist_ok=True)
+for model_type in MODEL_TYPES:
+    print(f"\n{'='*60}")
+    print(f"🚀 开始训练模型：{model_type}")
+    print(f"{'='*60}")
+    model_results = []
 
-        for target_col in config['target_cols']:
-            for step in predict_steps:
-                result = run_experiment(
-                    df_all, station_name, target_col, step,
-                    config['limit_col'], include_limit, save_dir
-                )
-                all_results.append(result)
+    for station_name, config in stations.items():
+        for include_limit in [True, False]:
+            sub_dir = '对比实验' if include_limit else '对比实验_无限电'
+            save_dir = os.path.join(sub_dir, model_type, station_name)
+            os.makedirs(save_dir, exist_ok=True)
 
-summary_df = pd.DataFrame(all_results)
-summary_df.to_csv(f'所有实验汇总_metrics_{MODEL_TYPE}.csv', index=False)
-print(f"\n📊 所有实验完成，汇总结果已保存为 所有实验汇总_metrics_{MODEL_TYPE}.csv")
+            for target_col in config['target_cols']:
+                for step in predict_steps:
+                    result = run_experiment(
+                        df_all, station_name, target_col, step,
+                        config['limit_col'], include_limit, save_dir, model_type
+                    )
+                    model_results.append(result)
+                    all_results.append(result)
+
+    summary_df = pd.DataFrame(model_results)
+    summary_df.to_csv(f'所有实验汇总_metrics_{model_type}.csv', index=False)
+    print(f"\n📊 [{model_type}] 实验完成，汇总结果已保存为 所有实验汇总_metrics_{model_type}.csv")
+
+all_summary_df = pd.DataFrame(all_results)
+all_summary_df.to_csv('所有实验汇总_metrics_ALL.csv', index=False)
+print(f"\n🎉 全部模型实验完成！综合汇总已保存为 所有实验汇总_metrics_ALL.csv")

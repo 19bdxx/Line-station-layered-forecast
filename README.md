@@ -27,8 +27,8 @@
 ```
 Line-station-layered-forecast/
 ├── CODE/
-│   ├── #1开始训练.py        ← 步骤1：模型训练与预测
-│   ├── #2预测结果汇总.py    ← 步骤2：按预测步长合并结果文件
+│   ├── #1开始训练.py        ← 步骤1：自动遍历所有模型完成训练与预测
+│   ├── #2预测结果汇总.py    ← 步骤2：按模型 / 预测步长合并结果文件
 │   └── #3汇总结果分析.py    ← 步骤3：直接预测 vs 加和预测对比分析
 ├── requirements.txt
 └── README.md
@@ -37,19 +37,18 @@ Line-station-layered-forecast/
 脚本运行后会自动生成以下输出目录（无需手动创建）：
 
 ```
-对比实验/              ← 含限电预测结果（步骤1 输出）
-对比实验_无限电/        ← 无限电预测结果（步骤1 输出）
-合并结果/              ← 合并后文件（步骤2 输出）
-├── with_limit/
-│   ├── XYA/
-│   ├── XYB/
-│   └── XS/
-└── no_limit/
-    ├── XYA/
-    ├── XYB/
-    └── XS/
-所有实验汇总_metrics_{MODEL_TYPE}.csv   ← 所有实验指标汇总（步骤1 输出）
-比较分析结果_全站预测加和_vs_直接预测.csv  ← 对比分析结果（步骤3 输出）
+对比实验/{model_type}/{station}/    ← 含限电预测结果（步骤1 输出）
+对比实验_无限电/{model_type}/{station}/  ← 无限电预测结果（步骤1 输出）
+
+合并结果/{model_type}/             ← 合并后文件（步骤2 输出）
+├── with_limit/{station}/
+└── no_limit/{station}/
+
+所有实验汇总_metrics_{model_type}.csv    ← 各模型指标汇总（步骤1 输出）
+所有实验汇总_metrics_ALL.csv             ← 所有模型综合汇总（步骤1 输出）
+
+比较分析结果_全站预测加和_vs_直接预测_{model_type}.csv  ← 各模型对比（步骤3 输出）
+比较分析结果_全站预测加和_vs_直接预测_ALL.csv           ← 所有模型综合对比（步骤3 输出）
 ```
 
 ---
@@ -99,11 +98,12 @@ python -c "import lightgbm, xgboost, sklearn, torch, pandas, numpy, matplotlib; 
 
 ## 五、配置说明
 
-在运行步骤1之前，打开 `CODE/#1开始训练.py`，按需修改第 **29–32 行**的配置：
+在运行步骤1之前，打开 `CODE/#1开始训练.py`，按需修改第 **29–33 行**的配置：
 
 ```python
 M = 32                  # 历史窗口长度（时间步数）
-MODEL_TYPE = 'lightgbm' # 选择预测模型，见下方可选值
+# 自动依次训练以下所有模型；如只需运行部分模型，注释掉不需要的条目即可。
+MODEL_TYPES = ['lightgbm', 'xgboost', 'random_forest', 'ridge', 'mlp', 'lstm']
 
 # Windows 路径示例（使用原始字符串 r"..."）：
 DATA_PATH = r"G:\WindPowerForecast\data\all_stations_15min.csv"
@@ -113,15 +113,11 @@ DATA_PATH = r"G:\WindPowerForecast\data\all_stations_15min.csv"
 predict_steps = [i for i in range(1, 96)]  # 预测步长范围：1~95（每步=15分钟，即15分钟~24小时）
 ```
 
-**`MODEL_TYPE` 可选值：**
+**只运行部分模型示例：**
 
 ```python
-MODEL_TYPE = 'lightgbm'      # LightGBM（默认，速度最快）
-MODEL_TYPE = 'xgboost'       # XGBoost
-MODEL_TYPE = 'random_forest' # 随机森林
-MODEL_TYPE = 'ridge'         # 岭回归
-MODEL_TYPE = 'mlp'           # 多层感知机
-MODEL_TYPE = 'lstm'          # LSTM（需要 PyTorch，支持 GPU）
+# 仅运行 LightGBM 和 XGBoost
+MODEL_TYPES = ['lightgbm', 'xgboost']
 ```
 
 ---
@@ -131,32 +127,30 @@ MODEL_TYPE = 'lstm'          # LSTM（需要 PyTorch，支持 GPU）
 > 以下命令均在项目根目录（`Line-station-layered-forecast/`）下执行。
 > 三个脚本必须**按顺序依次运行**，后一个脚本依赖前一个脚本的输出。
 
-### 步骤 1：模型训练与预测
+### 步骤 1：自动训练所有模型并预测
 
 ```bash
 python "CODE/#1开始训练.py"
 ```
 
 **功能：**
-- 对三个场站（XYA、XYB、XS）、每个目标列、1~95 预测步长、含/无限电共计大量组合分别训练模型
-- 每组实验结果保存为独立 CSV 文件
+- 自动依次训练 `MODEL_TYPES` 列表中所有模型（默认：lightgbm → xgboost → random_forest → ridge → mlp → lstm）
+- 对三个场站（XYA、XYB、XS）、每个目标列、1~95 预测步长、含/无限电组合分别训练
+- 每组实验结果保存为独立 CSV 文件，路径：`对比实验/{model_type}/{station}/`
 - 打印各组的 RMSE、MAE、MAPE、R² 指标
 - LightGBM 模型额外保存 RMSE 训练曲线图（.png）
+- 每个模型完成后保存 `所有实验汇总_metrics_{model_type}.csv`
+- 全部模型完成后保存综合汇总 `所有实验汇总_metrics_ALL.csv`
 
 **预期输出目录：**
 ```
-对比实验/XYA/    对比实验/XYB/    对比实验/XS/
-对比实验_无限电/XYA/    对比实验_无限电/XYB/    对比实验_无限电/XS/
-所有实验汇总_metrics_lightgbm.csv   （或对应 MODEL_TYPE 名称）
-```
-
-**切换模型后重新运行示例（以 XGBoost 为例）：**
-
-```bash
-# 1. 修改 CODE/#1开始训练.py 第30行：MODEL_TYPE = 'xgboost'
-# 2. 再次运行：
-python "CODE/#1开始训练.py"
-# 输出文件：所有实验汇总_metrics_xgboost.csv
+对比实验/lightgbm/XYA/    对比实验/lightgbm/XYB/    ...
+对比实验/xgboost/XYA/     对比实验/xgboost/XYB/     ...
+对比实验_无限电/lightgbm/  对比实验_无限电/xgboost/   ...
+所有实验汇总_metrics_lightgbm.csv
+所有实验汇总_metrics_xgboost.csv
+...
+所有实验汇总_metrics_ALL.csv
 ```
 
 ---
@@ -175,14 +169,14 @@ python "CODE/#2预测结果汇总.py"
 **预期输出目录：**
 ```
 合并结果/
-├── with_limit/
-│   ├── XYA/XYA_t+1_merged.csv, XYA_t+2_merged.csv, ..., XYA_t+95_merged.csv
-│   ├── XYB/XYB_t+1_merged.csv, XYB_t+2_merged.csv, ..., XYB_t+95_merged.csv
-│   └── XS/ XS_t+1_merged.csv,  XS_t+2_merged.csv,  ..., XS_t+95_merged.csv
-└── no_limit/
-    ├── XYA/ （同上，无限电条件）
-    ├── XYB/ （同上，无限电条件）
-    └── XS/  （同上，无限电条件）
+├── lightgbm/
+│   ├── with_limit/XYA/XYA_t+1_merged.csv, ..., XYA_t+95_merged.csv
+│   ├── with_limit/XYB/...
+│   ├── no_limit/XYA/...
+│   └── ...
+├── xgboost/
+│   └── ...（同上）
+└── ...（每个模型各一份）
 ```
 
 ---
@@ -202,13 +196,19 @@ python "CODE/#3汇总结果分析.py"
 
 **预期输出文件：**
 ```
-比较分析结果_全站预测加和_vs_直接预测.csv
+比较分析结果_全站预测加和_vs_直接预测_lightgbm.csv
+比较分析结果_全站预测加和_vs_直接预测_xgboost.csv
+...
+比较分析结果_全站预测加和_vs_直接预测_ALL.csv   ← 所有模型综合对比
 ```
+
+`_ALL.csv` 相比各单模型文件多一列 `model`，便于跨模型横向对比。
 
 输出文件字段说明：
 
 | 字段 | 说明 |
 |---|---|
+| `model` | 模型名称 |
 | `station` | 场站名称 |
 | `step` | 预测步长 |
 | `limit_mode` | `with_limit` / `no_limit` |
@@ -218,8 +218,6 @@ python "CODE/#3汇总结果分析.py"
 | `MAE_direct` | 直接预测的 MAE |
 | `R2_sum` | 加和预测的 R² |
 | `R2_direct` | 直接预测的 R² |
-
----
 
 ## 七、完整流程一键执行
 
