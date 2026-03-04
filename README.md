@@ -12,11 +12,14 @@
 
 ```
 ├── CODE/
-│   ├── #1开始训练.py        # 步骤一：模型训练与预测结果输出
-│   ├── #2预测结果汇总.py    # 步骤二：按场站和预测步长合并结果文件
-│   └── #3汇总结果分析.py    # 步骤三：对比分析分层聚合预测 vs 直接预测
-└── RAW_DATA/
-    └── all_stations.csv     # 原始风电场数据（含各场站功率及限电信息）
+│   ├── #1开始训练.py           # 步骤一：LightGBM 模型训练与预测结果输出
+│   ├── #2预测结果汇总.py       # 步骤二：按场站和预测步长合并结果文件
+│   ├── #3汇总结果分析.py       # 步骤三：对比分析分层聚合预测 vs 直接预测
+│   ├── #4多模型对比训练.py     # 扩展：支持多种模型（RF/XGBoost/Ridge/ET）的统一训练脚本
+│   └── #5多模型结果分析.py     # 扩展：跨模型结论一致性对比与可视化
+├── RAW_DATA/
+│   └── all_stations.csv        # 原始风电场数据（含各场站功率及限电信息）
+└── 多模型对比实验说明.md       # 多模型扩展实验的详细使用文档
 ```
 
 ---
@@ -117,6 +120,8 @@ $$
 
 ## 运行顺序
 
+### 原有 LightGBM 实验
+
 ```bash
 # 1. 训练模型并生成预测结果
 python "CODE/#1开始训练.py"
@@ -130,6 +135,18 @@ python "CODE/#3汇总结果分析.py"
 
 > **注意**：运行前请修改 `#1开始训练.py` 中的 `DATA_PATH` 为实际数据文件路径。
 
+### 多模型扩展实验（验证结论一致性）
+
+```bash
+# 4. 使用多种模型（LightGBM/RF/XGBoost/Ridge/ET）重复训练实验
+python "CODE/#4多模型对比训练.py"
+
+# 5. 跨模型结论一致性分析与可视化
+python "CODE/#5多模型结果分析.py"
+```
+
+详细说明请参阅 [多模型对比实验说明.md](./多模型对比实验说明.md)。
+
 ---
 
 ## 依赖环境
@@ -139,10 +156,11 @@ pandas
 numpy
 lightgbm
 scikit-learn
+xgboost
 matplotlib
 ```
 
 安装：
 ```bash
-pip install pandas numpy lightgbm scikit-learn matplotlib
+pip install pandas numpy lightgbm scikit-learn xgboost matplotlib
 ```
