@@ -35,69 +35,76 @@ for model_type in MODEL_TYPES:
     print(f"🔄 正在合并模型：{model_type}")
     print(f"{'='*60}")
 
-    base_dirs = {
-        "with_limit": os.path.join("对比实验", model_type),
-        "no_limit":   os.path.join("对比实验_无限电", model_type)
-    }
+    try:
+        base_dirs = {
+            "with_limit": os.path.join("对比实验", model_type),
+            "no_limit":   os.path.join("对比实验_无限电", model_type)
+        }
 
-    for limit_mode, base_dir in base_dirs.items():
-        if not os.path.exists(base_dir):
-            print(f"⚠️ 目录不存在，跳过：{base_dir}")
-            continue
-        print(f"\n📂 正在处理目录：{base_dir} ({limit_mode})")
-
-        for station, targets in stations.items():
-            station_dir = os.path.join(base_dir, station)
-            if not os.path.exists(station_dir):
-                print(f"⚠️ 目录不存在: {station_dir}")
+        for limit_mode, base_dir in base_dirs.items():
+            if not os.path.exists(base_dir):
+                print(f"⚠️ 目录不存在，跳过：{base_dir}")
                 continue
+            print(f"\n📂 正在处理目录：{base_dir} ({limit_mode})")
 
-            # 用于分步长收集合并文件
-            step_grouped = {}
-
-            for file in os.listdir(station_dir):
-                if not file.endswith(".csv"):
+            for station, targets in stations.items():
+                station_dir = os.path.join(base_dir, station)
+                if not os.path.exists(station_dir):
+                    print(f"⚠️ 目录不存在: {station_dir}")
                     continue
 
-                file_path = os.path.join(station_dir, file)
+                # 用于分步长收集合并文件
+                step_grouped = {}
 
-                # 解析文件名：格式应为 {target_col}_t+{step}.csv
-                try:
-                    target_part, step_part = file.replace(".csv", "").split("_t+")
-                    step = int(step_part)
-                    target_name = target_part.split("_")[-1]  # 如 JIA, YI, STATION
-                except Exception as e:
-                    print(f"❌ 文件命名错误: {file} -> {e}")
-                    continue
+                for file in os.listdir(station_dir):
+                    if not file.endswith(".csv"):
+                        continue
 
-                df = pd.read_csv(file_path)
-                rename_map = {
-                    'y_true': f'{target_name}_true',
-                    'y_pred': f'{target_name}_pred',
-                    'bias_rate': f'{target_name}_bias_rate',
-                    'limit_value': f'{target_name}_limit_value'
-                }
-                df = df.rename(columns=rename_map)
+                    file_path = os.path.join(station_dir, file)
 
-                # 保留 timestamp + 改名后的列
-                use_cols = ['timestamp'] + list(rename_map.values())
-                df = df[use_cols]
+                    # 解析文件名：格式应为 {target_col}_t+{step}.csv
+                    try:
+                        target_part, step_part = file.replace(".csv", "").split("_t+")
+                        step = int(step_part)
+                        target_name = target_part.split("_")[-1]  # 如 JIA, YI, STATION
+                    except Exception as e:
+                        print(f"❌ 文件命名错误: {file} -> {e}")
+                        continue
 
-                if step not in step_grouped:
-                    step_grouped[step] = df
-                else:
-                    # 合并相同 timestamp 的预测结果
-                    step_grouped[step] = pd.merge(
-                        step_grouped[step], df, on='timestamp', how='outer'
-                    )
+                    df = pd.read_csv(file_path)
+                    rename_map = {
+                        'y_true': f'{target_name}_true',
+                        'y_pred': f'{target_name}_pred',
+                        'bias_rate': f'{target_name}_bias_rate',
+                        'limit_value': f'{target_name}_limit_value'
+                    }
+                    df = df.rename(columns=rename_map)
 
-            # 输出每个预测步长的合并结果
-            save_dir = os.path.join("合并结果", model_type, limit_mode, station)
-            os.makedirs(save_dir, exist_ok=True)
+                    # 保留 timestamp + 改名后的列
+                    use_cols = ['timestamp'] + list(rename_map.values())
+                    df = df[use_cols]
 
-            for step, df_merged in step_grouped.items():
-                df_merged.sort_values("timestamp", inplace=True)
-                output_path = os.path.join(save_dir, f"{station}_t+{step}_merged.csv")
-                df_merged.to_csv(output_path, index=False)
+                    if step not in step_grouped:
+                        step_grouped[step] = df
+                    else:
+                        # 合并相同 timestamp 的预测结果
+                        step_grouped[step] = pd.merge(
+                            step_grouped[step], df, on='timestamp', how='outer'
+                        )
 
-            print(f"✅ [{model_type}] {station} 场站已完成合并（共 {len(step_grouped)} 个预测步长）")
+                # 输出每个预测步长的合并结果
+                save_dir = os.path.join("合并结果", model_type, limit_mode, station)
+                os.makedirs(save_dir, exist_ok=True)
+
+                for step, df_merged in step_grouped.items():
+                    df_merged.sort_values("timestamp", inplace=True)
+                    output_path = os.path.join(save_dir, f"{station}_t+{step}_merged.csv")
+                    df_merged.to_csv(output_path, index=False)
+
+                print(f"✅ [{model_type}] {station} 场站已完成合并（共 {len(step_grouped)} 个预测步长）")
+
+    except Exception as e:
+        import traceback
+        print(f"\n❌ 模型 [{model_type}] 合并出错，已跳过。错误信息：{e}")
+        traceback.print_exc()
+        continue

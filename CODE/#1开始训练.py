@@ -347,24 +347,31 @@ for model_type in MODEL_TYPES:
     print(f"{'='*60}")
     model_results = []
 
-    for station_name, config in stations.items():
-        for include_limit in [True, False]:
-            sub_dir = '对比实验' if include_limit else '对比实验_无限电'
-            save_dir = os.path.join(sub_dir, model_type, station_name)
-            os.makedirs(save_dir, exist_ok=True)
+    try:
+        for station_name, config in stations.items():
+            for include_limit in [True, False]:
+                sub_dir = '对比实验' if include_limit else '对比实验_无限电'
+                save_dir = os.path.join(sub_dir, model_type, station_name)
+                os.makedirs(save_dir, exist_ok=True)
 
-            for target_col in config['target_cols']:
-                for step in predict_steps:
-                    result = run_experiment(
-                        df_all, station_name, target_col, step,
-                        config['limit_col'], include_limit, save_dir, model_type
-                    )
-                    model_results.append(result)
-                    all_results.append(result)
+                for target_col in config['target_cols']:
+                    for step in predict_steps:
+                        result = run_experiment(
+                            df_all, station_name, target_col, step,
+                            config['limit_col'], include_limit, save_dir, model_type
+                        )
+                        model_results.append(result)
+                        all_results.append(result)
 
-    summary_df = pd.DataFrame(model_results)
-    summary_df.to_csv(f'所有实验汇总_metrics_{model_type}.csv', index=False)
-    print(f"\n📊 [{model_type}] 实验完成，汇总结果已保存为 所有实验汇总_metrics_{model_type}.csv")
+        summary_df = pd.DataFrame(model_results)
+        summary_df.to_csv(f'所有实验汇总_metrics_{model_type}.csv', index=False)
+        print(f"\n📊 [{model_type}] 实验完成，汇总结果已保存为 所有实验汇总_metrics_{model_type}.csv")
+
+    except Exception as e:
+        import traceback
+        print(f"\n❌ 模型 [{model_type}] 执行出错，已跳过。错误信息：{e}")
+        traceback.print_exc()
+        continue
 
 all_summary_df = pd.DataFrame(all_results)
 all_summary_df.to_csv('所有实验汇总_metrics_ALL.csv', index=False)
