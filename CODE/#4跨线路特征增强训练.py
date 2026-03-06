@@ -413,10 +413,10 @@ def build_and_train_model(model_type, X_tr, y_tr, X_val, y_val, seq_len, n_featu
 
         tr_loader  = DataLoader(tr_ds,  batch_size=batch_size, shuffle=True,
                                 num_workers=num_workers, pin_memory=pin_memory,
-                                persistent_workers=(num_workers > 0), drop_last=False)
+                                persistent_workers=False, drop_last=False)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
                                 num_workers=num_workers, pin_memory=pin_memory,
-                                persistent_workers=(num_workers > 0), drop_last=False)
+                                persistent_workers=False, drop_last=False)
 
         net        = LSTMRegressor(input_size=n_features).to(device)
         optimizer  = torch.optim.AdamW(net.parameters(), lr=1e-3, weight_decay=1e-4)

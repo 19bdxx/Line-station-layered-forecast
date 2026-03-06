@@ -403,7 +403,7 @@ def build_and_train_model(model_type, X_tr, y_tr, X_val, y_val, seq_len, n_featu
             shuffle=True,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            persistent_workers=(num_workers > 0),
+            persistent_workers=False,
             drop_last=False
         )
         val_loader = DataLoader(
@@ -412,7 +412,7 @@ def build_and_train_model(model_type, X_tr, y_tr, X_val, y_val, seq_len, n_featu
             shuffle=False,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            persistent_workers=(num_workers > 0),
+            persistent_workers=False,
             drop_last=False
         )
 
