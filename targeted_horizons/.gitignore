@@ -1,0 +1,12 @@
+# Intermediate prediction output directories (large, reproducible)
+对比实验/
+对比实验_无限电/
+合并结果/
+# Per-model summary metrics (reproduce with CODE scripts)
+所有实验汇总_metrics_*.csv
+# Per-model comparison CSVs (the ALL.csv is kept)
+比较分析结果_全站预测加和_vs_直接预测_lightgbm.csv
+比较分析结果_全站预测加和_vs_直接预测_xgboost.csv
+比较分析结果_全站预测加和_vs_直接预测_random_forest.csv
+比较分析结果_全站预测加和_vs_直接预测_ridge.csv
+比较分析结果_全站预测加和_vs_直接预测_mlp.csv
